@@ -37,13 +37,38 @@ function explore(page, attribute, additionalViewMore = "") {
   }];`;
 }
 
+function exploreWithType(type, result) {
+  return `explore = [{
+    title: "Fixture Discover",
+    type: "${type}",
+    load: async () => (${result}),
+  }];`;
+}
+
 assert.doesNotThrow(() => validateSourcePolicy(source(), entry));
 assert.doesNotThrow(() => validateSourcePolicy(source(explore("category", "category")), entry));
 assert.doesNotThrow(() => validateSourcePolicy(source(explore("search", "keyword")), entry));
 assert.doesNotThrow(() => validateSourcePolicy(
+  source(exploreWithType("singlePageWithMultiPart", "{ Hot: [], Latest: [] }")),
+  entry,
+));
+assert.doesNotThrow(() => validateSourcePolicy(
+  source(exploreWithType("multiPageComicList", "{ comics: [], maxPage: 1 }")),
+  entry,
+));
+assert.doesNotThrow(() => validateSourcePolicy(
+  source(exploreWithType("mixed", "{ data: [], maxPage: 1 }")),
+  entry,
+));
+assert.doesNotThrow(() => validateSourcePolicy(
   source(explore("category", "category", "second: { viewMore: { page: 'search', attributes: { keyword: 'fixture' } } },")),
   entry,
 ));
+
+assert.throws(
+  () => validateSourcePolicy(source(exploreWithType("unsupported", "{}")), entry),
+  /unsupported page type/,
+);
 
 assert.throws(
   () => validateSourcePolicy(source(explore("category", "keyword")), entry),

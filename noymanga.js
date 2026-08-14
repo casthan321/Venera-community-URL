@@ -1,7 +1,7 @@
 class Noymanga extends ComicSource {
   name = "NoyManga";
   key = "noymanga";
-  version = "1.1.0";
+  version = "1.1.1";
   minAppVersion = "1.6.0";
   url = "https://raw.githubusercontent.com/casthan321/Venera-community-URL/main/noymanga.js";
 
@@ -501,26 +501,26 @@ class Noymanga extends ComicSource {
 
   settings = {
     account_status: {
-      title: "NoyManga 账号状态",
+      title: "账号",
       type: "callback",
-      buttonText: "检查当前登录账号",
+      buttonText: "检查",
       callback: async () => this.showAccountStatus(),
     },
     manual_signin: {
-      title: "每日签到",
+      title: "签到",
       type: "callback",
-      buttonText: "立即签到（已签到不会重复操作）",
+      buttonText: "签到",
       callback: async () => this.manualSignIn(),
     },
     auto_signin: {
-      title: "阅读时自动尝试每日签到",
+      title: "自动签到",
       type: "switch",
       default: false,
     },
     source_self_test: {
-      title: "源可用性 Level 3 自检",
+      title: "连接测试",
       type: "callback",
-      buttonText: "运行账号→签到记录（只读）→搜索→分类→详情→章节→图片测试",
+      buttonText: "测试",
       callback: async () => this.runSelfTest(),
     },
   };
@@ -533,14 +533,14 @@ class Noymanga extends ComicSource {
       const searchResult = await this.search.load("魔法少女", [], 1);
       if (!searchResult.comics || searchResult.comics.length === 0) throw "搜索没有返回漫画";
 
-      const categoryResult = await this.categoryComics.load("new|", null, [], 1);
+      const categoryResult = await this.categoryComics.load("最新", "new|", [], 1);
       if (!categoryResult.comics || categoryResult.comics.length === 0) throw "分类没有返回漫画";
 
       const exploreResult = await this.explore[0].load();
-      if (!Array.isArray(exploreResult) || exploreResult.length < 3) throw "发现页分区少于 3 个";
-      for (const part of exploreResult.slice(0, 3)) {
-        if (!part || !Array.isArray(part.comics) || part.comics.length === 0) {
-          throw "发现页分区“" + String(part && part.title || "未知") + "”没有返回漫画";
+      if (!exploreResult || Array.isArray(exploreResult) || Object.keys(exploreResult).length < 3) throw "首页分区少于 3 个";
+      for (const title of Object.keys(exploreResult).slice(0, 3)) {
+        if (!Array.isArray(exploreResult[title]) || exploreResult[title].length === 0) {
+          throw "首页分区“" + String(title || "未知") + "”没有返回漫画";
         }
       }
 
@@ -638,8 +638,8 @@ class Noymanga extends ComicSource {
 
   explore = [
     {
-      title: "NoyManga-noymanga-发现",
-      type: "multiPartPage",
+      title: "NoyManga · 首页",
+      type: "singlePageWithMultiPart",
       load: async () => {
         this.maybeAutoSignIn();
         const definitions = [
@@ -647,17 +647,11 @@ class Noymanga extends ComicSource {
           { title: "最多收藏", category: "favorites|" },
           { title: "最高评分", category: "rating|" },
         ];
-        const parts = [];
+        const parts = {};
         for (const definition of definitions) {
-          const result = await this.categoryComics.load(definition.category, null, [], 1);
-          parts.push({
-            title: definition.title,
-            comics: Array.from(result.comics || []).slice(0, 12),
-            viewMore: {
-              page: "category",
-              attributes: { category: definition.category, param: null },
-            },
-          });
+          const result = await this.categoryComics.load(definition.title, definition.category, [], 1);
+          const comics = Array.from(result.comics || []).slice(0, 12);
+          if (comics.length > 0) parts[definition.title] = comics;
         }
         return parts;
       },
@@ -665,24 +659,24 @@ class Noymanga extends ComicSource {
   ];
 
   category = {
-    title: "NoyManga-noymanga-分类",
+    title: "NoyManga · 分类",
     parts: [
       {
         name: "排序",
         type: "fixed",
         categories: [
-          { label: "最新", target: { page: "category", attributes: { category: "new|", param: null } } },
-          { label: "最多浏览", target: { page: "category", attributes: { category: "views|", param: null } } },
-          { label: "最多收藏", target: { page: "category", attributes: { category: "favorites|", param: null } } },
-          { label: "最高评分", target: { page: "category", attributes: { category: "rating|", param: null } } },
+          { label: "最新", target: { page: "category", attributes: { category: "最新", param: "new|" } } },
+          { label: "最多浏览", target: { page: "category", attributes: { category: "最多浏览", param: "views|" } } },
+          { label: "最多收藏", target: { page: "category", attributes: { category: "最多收藏", param: "favorites|" } } },
+          { label: "最高评分", target: { page: "category", attributes: { category: "最高评分", param: "rating|" } } },
         ],
       },
       {
         name: "连载状态",
         type: "fixed",
         categories: [
-          { label: "连载", target: { page: "category", attributes: { category: "new|false", param: null } } },
-          { label: "完结", target: { page: "category", attributes: { category: "new|true", param: null } } },
+          { label: "连载", target: { page: "category", attributes: { category: "连载", param: "new|false" } } },
+          { label: "完结", target: { page: "category", attributes: { category: "完结", param: "new|true" } } },
         ],
       },
     ],
@@ -693,7 +687,7 @@ class Noymanga extends ComicSource {
     load: async (category, param, options, page) => {
       this.maybeAutoSignIn();
       const pageNumber = Math.max(1, Number(page) || 1);
-      const config = this.decodeCategory(category);
+      const config = this.decodeCategory(param || category);
       const payload = await this.postForm("/api/b1/booklist", [
         ["page", pageNumber],
         ["sort", config.sort],

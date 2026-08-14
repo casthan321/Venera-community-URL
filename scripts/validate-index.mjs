@@ -9,6 +9,12 @@ const strictCapabilitySources = new Map([
   ["tencent_comics", new Set(["account", "favorites", "explore"])],
   ["noymanga", new Set(["account", "favorites", "explore", "signin"])],
 ]);
+const supportedExploreTypes = new Set([
+  "singlePageWithMultiPart",
+  "multiPageComicList",
+  "multiPartPage",
+  "mixed",
+]);
 
 if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(scriptFile)) {
   validateRepository();
@@ -110,10 +116,13 @@ export function validateSourcePolicy(code, entry) {
   if (strictCapabilities.has("explore") && !explore) {
     reject("this maintained source must keep its Discover integration");
   }
-  if (explore && !/\btype\s*:\s*["']multiPartPage["']/m.test(explore)) {
-    reject("declared Discover integration needs a multiPartPage");
+  const exploreTypes = explore
+    ? [...explore.matchAll(/\btype\s*:\s*["']([^"']+)["']/g)].map((match) => match[1])
+    : [];
+  if (explore && (exploreTypes.length === 0 || exploreTypes.some((type) => !supportedExploreTypes.has(type)))) {
+    reject("declared Discover integration uses an unsupported page type");
   }
-  if (explore) validateExploreTargets(explore, reject);
+  if (explore && exploreTypes.includes("multiPartPage")) validateExploreTargets(explore, reject);
 
   if (strictCapabilities.has("signin") && (!manualSignIn || !autoSignIn)) {
     reject("this maintained source must keep manual and optional automatic sign-in settings");
