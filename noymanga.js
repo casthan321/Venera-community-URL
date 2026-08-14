@@ -1,7 +1,7 @@
 class Noymanga extends ComicSource {
   name = "NoyManga";
   key = "noymanga";
-  version = "1.1.2";
+  version = "1.1.3";
   minAppVersion = "1.6.0";
   url = "https://raw.githubusercontent.com/casthan321/Venera-community-URL/main/noymanga.js";
 
@@ -537,10 +537,10 @@ class Noymanga extends ComicSource {
       if (!categoryResult.comics || categoryResult.comics.length === 0) throw "分类没有返回漫画";
 
       const exploreResult = await this.explore[0].load();
-      if (!exploreResult || Array.isArray(exploreResult) || Object.keys(exploreResult).length < 3) throw "首页分区少于 3 个";
+      if (!exploreResult || Array.isArray(exploreResult) || Object.keys(exploreResult).length < 3) throw "实际首页漫画分区少于 3 个";
       for (const title of Object.keys(exploreResult).slice(0, 3)) {
         if (!Array.isArray(exploreResult[title]) || exploreResult[title].length === 0) {
-          throw "首页分区“" + String(title || "未知") + "”没有返回漫画";
+          throw "实际首页分区“" + String(title || "未知") + "”没有返回漫画";
         }
       }
 
@@ -642,17 +642,24 @@ class Noymanga extends ComicSource {
       type: "singlePageWithMultiPart",
       load: async () => {
         this.maybeAutoSignIn();
+        const payload = await this.postForm("/api/home", [
+          ["v", 3],
+          ["stream_all", 1],
+        ], "首页");
         const definitions = [
-          { title: "最新漫画", category: "new|" },
-          { title: "最多收藏", category: "favorites|" },
-          { title: "最高评分", category: "rating|" },
+          { title: "今日阅读榜", field: "readDay" },
+          { title: "今日收藏榜", field: "favDay" },
+          { title: "高质榜", field: "proportion" },
+          { title: "收藏推荐", field: "fs" },
         ];
         const parts = {};
         for (const definition of definitions) {
-          const result = await this.categoryComics.load(definition.title, definition.category, [], 1);
-          const comics = Array.from(result.comics || []).slice(0, 12);
+          const comics = this.parseCategoryComics({
+            data: Array.isArray(payload[definition.field]) ? payload[definition.field] : [],
+          }).slice(0, 10);
           if (comics.length > 0) parts[definition.title] = comics;
         }
+        if (Object.keys(parts).length === 0) throw "首页 API 没有返回漫画分区";
         return parts;
       },
     },

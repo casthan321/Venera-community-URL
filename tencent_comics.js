@@ -1,7 +1,7 @@
 class TencentComics extends ComicSource {
   name = "腾讯动漫";
   key = "tencent_comics";
-  version = "1.1.2";
+  version = "1.1.3";
   minAppVersion = "1.6.0";
   url = "https://raw.githubusercontent.com/casthan321/Venera-community-URL/main/tencent_comics.js";
 
@@ -337,6 +337,19 @@ class TencentComics extends ComicSource {
     return comics;
   }
 
+  findHomepageRoot(document, definition) {
+    const roots = Array.from(document.querySelectorAll(definition.rootSelector || "section.mod-item"));
+    const expectedHeading = String(definition.headingText || definition.title || "").replace(/\s+/g, " ").trim();
+    if (expectedHeading) {
+      const headingMatch = roots.find((root) => {
+        const heading = root.querySelector("h2.sub-title .title-content,h2.sub-title,h2,h3");
+        return String(heading?.text || "").replace(/\s+/g, " ").trim() === expectedHeading;
+      });
+      if (headingMatch) return headingMatch;
+    }
+    return roots[Number(definition.rootIndex) || 0] || null;
+  }
+
   evaluateSafeArithmetic(expression) {
     if (!expression || expression.length > 256) throw "Invalid nonce expression length";
     let index = 0;
@@ -608,7 +621,7 @@ class TencentComics extends ComicSource {
   async runSelfTest() {
     try {
       await this.probeTencentAccount();
-      const searchResult = await this.search.load("斗罗大陆", [], 1);
+      const searchResult = await this.search.load("腾讯测试", [], 1);
       if (!searchResult.comics?.length) throw "搜索没有返回漫画";
       const first = searchResult.comics[0];
       const thumbnailConfig = this.comic.onThumbnailLoad(first.cover);
@@ -626,9 +639,9 @@ class TencentComics extends ComicSource {
       const exploreParts = await this.explore[0].load();
       if (
         !exploreParts || Array.isArray(exploreParts) ||
-        Object.keys(exploreParts).length < 3 ||
-        Object.keys(exploreParts).slice(0, 3).some((title) => !exploreParts[title]?.length)
-      ) throw "首页热门、更新或收藏分区为空";
+        Object.keys(exploreParts).length !== 3 ||
+        Object.keys(exploreParts).some((title) => !exploreParts[title]?.length)
+      ) throw "腾讯动漫真实首页推荐分区为空";
       const info = await this.comic.loadInfo(first.id);
       if (!info.title || !info.cover || !info.chapters || info.chapters.size === 0) throw "详情或公开章节不完整";
       let epId = "";
@@ -720,7 +733,7 @@ class TencentComics extends ComicSource {
 
   category = {
     title: "腾讯动漫 · 分类",
-    parts: [{"name":"热门排序","type":"fixed","categories":[{"label":"条漫","target":{"page":"category","attributes":{"category":"条漫","param":"https://m.ac.qq.com/category/listAll/type/tm/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"独家","target":{"page":"category","attributes":{"category":"独家","param":"https://m.ac.qq.com/category/listAll/type/dj/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"完结","target":{"page":"category","attributes":{"category":"完结","param":"https://m.ac.qq.com/category/listAll/type/wj/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"日漫","target":{"page":"category","attributes":{"category":"日漫","param":"https://m.ac.qq.com/category/listAll/type/rm/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"恋爱","target":{"page":"category","attributes":{"category":"恋爱","param":"https://m.ac.qq.com/category/listAll/type/na/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"玄幻","target":{"page":"category","attributes":{"category":"玄幻","param":"https://m.ac.qq.com/category/listAll/type/xh/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"热血","target":{"page":"category","attributes":{"category":"热血","param":"https://m.ac.qq.com/category/listAll/type/rx/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"悬疑","target":{"page":"category","attributes":{"category":"悬疑","param":"https://m.ac.qq.com/category/listAll/type/xy/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"少女","target":{"page":"category","attributes":{"category":"少女","param":"https://m.ac.qq.com/category/listAll/type/sv/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"韩漫","target":{"page":"category","attributes":{"category":"韩漫","param":"https://m.ac.qq.com/category/listAll/type/hm/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"科幻","target":{"page":"category","attributes":{"category":"科幻","param":"https://m.ac.qq.com/category/listAll/type/kh/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"逗比","target":{"page":"category","attributes":{"category":"逗比","param":"https://m.ac.qq.com/category/listAll/type/db/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"校园","target":{"page":"category","attributes":{"category":"校园","param":"https://m.ac.qq.com/category/listAll/type/qcxy/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"都市","target":{"page":"category","attributes":{"category":"都市","param":"https://m.ac.qq.com/category/listAll/type/ds/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"治愈","target":{"page":"category","attributes":{"category":"治愈","param":"https://m.ac.qq.com/category/listAll/type/zy/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"恐怖","target":{"page":"category","attributes":{"category":"恐怖","param":"https://m.ac.qq.com/category/listAll/type/kb/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"妖怪","target":{"page":"category","attributes":{"category":"妖怪","param":"https://m.ac.qq.com/category/listAll/type/yg/rank/pgv?page={page}&pageSize=15&style=items"}}}]},{"name":"更新排序","type":"fixed","categories":[{"label":"条漫","target":{"page":"category","attributes":{"category":"条漫","param":"https://m.ac.qq.com/category/listAll/type/tm/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"独家","target":{"page":"category","attributes":{"category":"独家","param":"https://m.ac.qq.com/category/listAll/type/dj/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"完结","target":{"page":"category","attributes":{"category":"完结","param":"https://m.ac.qq.com/category/listAll/type/wj/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"日漫","target":{"page":"category","attributes":{"category":"日漫","param":"https://m.ac.qq.com/category/listAll/type/rm/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"恋爱","target":{"page":"category","attributes":{"category":"恋爱","param":"https://m.ac.qq.com/category/listAll/type/na/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"玄幻","target":{"page":"category","attributes":{"category":"玄幻","param":"https://m.ac.qq.com/category/listAll/type/xh/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"热血","target":{"page":"category","attributes":{"category":"热血","param":"https://m.ac.qq.com/category/listAll/type/rx/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"悬疑","target":{"page":"category","attributes":{"category":"悬疑","param":"https://m.ac.qq.com/category/listAll/type/xy/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"少女","target":{"page":"category","attributes":{"category":"少女","param":"https://m.ac.qq.com/category/listAll/type/sv/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"韩漫","target":{"page":"category","attributes":{"category":"韩漫","param":"https://m.ac.qq.com/category/listAll/type/hm/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"科幻","target":{"page":"category","attributes":{"category":"科幻","param":"https://m.ac.qq.com/category/listAll/type/kh/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"逗比","target":{"page":"category","attributes":{"category":"逗比","param":"https://m.ac.qq.com/category/listAll/type/db/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"校园","target":{"page":"category","attributes":{"category":"校园","param":"https://m.ac.qq.com/category/listAll/type/qcxy/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"都市","target":{"page":"category","attributes":{"category":"都市","param":"https://m.ac.qq.com/category/listAll/type/ds/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"治愈","target":{"page":"category","attributes":{"category":"治愈","param":"https://m.ac.qq.com/category/listAll/type/zy/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"恐怖","target":{"page":"category","attributes":{"category":"恐怖","param":"https://m.ac.qq.com/category/listAll/type/kb/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"妖怪","target":{"page":"category","attributes":{"category":"妖怪","param":"https://m.ac.qq.com/category/listAll/type/yg/rank/upt?page={page}&pageSize=15&style=items"}}}]},{"name":"收藏排序","type":"fixed","categories":[{"label":"条漫","target":{"page":"category","attributes":{"category":"条漫","param":"https://m.ac.qq.com/category/listAll/type/tm/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"独家","target":{"page":"category","attributes":{"category":"独家","param":"https://m.ac.qq.com/category/listAll/type/dj/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"完结","target":{"page":"category","attributes":{"category":"完结","param":"https://m.ac.qq.com/category/listAll/type/wj/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"日漫","target":{"page":"category","attributes":{"category":"日漫","param":"https://m.ac.qq.com/category/listAll/type/rm/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"恋爱","target":{"page":"category","attributes":{"category":"恋爱","param":"https://m.ac.qq.com/category/listAll/type/na/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"玄幻","target":{"page":"category","attributes":{"category":"玄幻","param":"https://m.ac.qq.com/category/listAll/type/xh/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"热血","target":{"page":"category","attributes":{"category":"热血","param":"https://m.ac.qq.com/category/listAll/type/rx/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"悬疑","target":{"page":"category","attributes":{"category":"悬疑","param":"https://m.ac.qq.com/category/listAll/type/xy/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"少女","target":{"page":"category","attributes":{"category":"少女","param":"https://m.ac.qq.com/category/listAll/type/sv/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"韩漫","target":{"page":"category","attributes":{"category":"韩漫","param":"https://m.ac.qq.com/category/listAll/type/hm/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"科幻","target":{"page":"category","attributes":{"category":"科幻","param":"https://m.ac.qq.com/category/listAll/type/kh/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"逗比","target":{"page":"category","attributes":{"category":"逗比","param":"https://m.ac.qq.com/category/listAll/type/db/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"校园","target":{"page":"category","attributes":{"category":"校园","param":"https://m.ac.qq.com/category/listAll/type/qcxy/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"都市","target":{"page":"category","attributes":{"category":"都市","param":"https://m.ac.qq.com/category/listAll/type/ds/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"治愈","target":{"page":"category","attributes":{"category":"治愈","param":"https://m.ac.qq.com/category/listAll/type/zy/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"恐怖","target":{"page":"category","attributes":{"category":"恐怖","param":"https://m.ac.qq.com/category/listAll/type/kb/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"妖怪","target":{"page":"category","attributes":{"category":"妖怪","param":"https://m.ac.qq.com/category/listAll/type/yg/rank/coll?page={page}&pageSize=15&style=items"}}}]}],
+    parts: [{"name":"热门排序","type":"fixed","categories":[{"label":"条漫","target":{"page":"category","attributes":{"category":"条漫","param":"https://m.ac.qq.com/category/listAll/type/tm/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"热血","target":{"page":"category","attributes":{"category":"热血","param":"https://m.ac.qq.com/category/listAll/type/rx/rank/pgv?page={page}&pageSize=15&style=items"}}},{"label":"玄幻","target":{"page":"category","attributes":{"category":"玄幻","param":"https://m.ac.qq.com/category/listAll/type/xh/rank/pgv?page={page}&pageSize=15&style=items"}}}]},{"name":"更新排序","type":"fixed","categories":[{"label":"条漫","target":{"page":"category","attributes":{"category":"条漫","param":"https://m.ac.qq.com/category/listAll/type/tm/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"热血","target":{"page":"category","attributes":{"category":"热血","param":"https://m.ac.qq.com/category/listAll/type/rx/rank/upt?page={page}&pageSize=15&style=items"}}},{"label":"玄幻","target":{"page":"category","attributes":{"category":"玄幻","param":"https://m.ac.qq.com/category/listAll/type/xh/rank/upt?page={page}&pageSize=15&style=items"}}}]},{"name":"收藏排序","type":"fixed","categories":[{"label":"条漫","target":{"page":"category","attributes":{"category":"条漫","param":"https://m.ac.qq.com/category/listAll/type/tm/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"热血","target":{"page":"category","attributes":{"category":"热血","param":"https://m.ac.qq.com/category/listAll/type/rx/rank/coll?page={page}&pageSize=15&style=items"}}},{"label":"玄幻","target":{"page":"category","attributes":{"category":"玄幻","param":"https://m.ac.qq.com/category/listAll/type/xh/rank/coll?page={page}&pageSize=15&style=items"}}}]}],
     enableRankingPage: false,
   };
 
@@ -751,19 +764,22 @@ class TencentComics extends ComicSource {
       title: "腾讯动漫 · 首页",
       type: "singlePageWithMultiPart",
       load: async () => {
-        const categoryParts = Array.from(this.category.parts || []).slice(0, 3);
-        if (categoryParts.length < 3) throw "腾讯动漫发现页缺少热门、更新或收藏分类";
-        const output = {};
-        for (const part of categoryParts) {
-          const entry = part.categories?.[0];
-          const categoryLabel = entry?.target?.attributes?.category;
-          const categoryUrl = entry?.target?.attributes?.param;
-          if (!categoryUrl) throw "腾讯动漫发现页分类入口无效";
-          const result = await this.categoryComics.load(categoryLabel, categoryUrl, [], 1);
-          if (!result.comics?.length) throw "腾讯动漫发现页“" + part.name + "”为空";
-          output[part.name] = result.comics.slice(0, 12);
+        const url = "https://m.ac.qq.com/";
+        const document = await this.loadDocument(url, this.baseUrl);
+        try {
+          const output = {};
+          for (const definition of [{"title":"精品·企鹅娘打滚推荐","rootSelector":"section.recommend","rootIndex":0,"headingText":"精品·企鹅娘打滚推荐","cards":{"containerSelector":"li.comic-item","linkSelector":"a.comic-link","titleSelector":"strong.comic-title","coverSelector":"img.cover-image","count":6,"samples":[{"title":"漫画1001","url":"https://m.ac.qq.com/comic/index/id/1001","cover":"https://m.ac.qq.com/covers/1001.jpg"},{"title":"漫画1002","url":"https://m.ac.qq.com/comic/index/id/1002","cover":"https://m.ac.qq.com/covers/1002.jpg"},{"title":"漫画1003","url":"https://m.ac.qq.com/comic/index/id/1003","cover":"https://m.ac.qq.com/covers/1003.jpg"},{"title":"漫画1004","url":"https://m.ac.qq.com/comic/index/id/1004","cover":"https://m.ac.qq.com/covers/1004.jpg"},{"title":"漫画1005","url":"https://m.ac.qq.com/comic/index/id/1005","cover":"https://m.ac.qq.com/covers/1005.jpg"},{"title":"漫画1006","url":"https://m.ac.qq.com/comic/index/id/1006","cover":"https://m.ac.qq.com/covers/1006.jpg"}]}},{"title":"热门·OMG…盘它！","rootSelector":"section.hot-comic","rootIndex":0,"headingText":"热门·OMG…盘它！","cards":{"containerSelector":"li.comic-item","linkSelector":"a.comic-link","titleSelector":"strong.comic-title","coverSelector":"img.cover-image","count":6,"samples":[{"title":"漫画2001","url":"https://m.ac.qq.com/comic/index/id/2001","cover":"https://m.ac.qq.com/covers/2001.jpg"},{"title":"漫画2002","url":"https://m.ac.qq.com/comic/index/id/2002","cover":"https://m.ac.qq.com/covers/2002.jpg"},{"title":"漫画2003","url":"https://m.ac.qq.com/comic/index/id/2003","cover":"https://m.ac.qq.com/covers/2003.jpg"},{"title":"漫画2004","url":"https://m.ac.qq.com/comic/index/id/2004","cover":"https://m.ac.qq.com/covers/2004.jpg"},{"title":"漫画2005","url":"https://m.ac.qq.com/comic/index/id/2005","cover":"https://m.ac.qq.com/covers/2005.jpg"},{"title":"漫画2006","url":"https://m.ac.qq.com/comic/index/id/2006","cover":"https://m.ac.qq.com/covers/2006.jpg"}]}},{"title":"独家·只此一家别无分店","rootSelector":"section.exclusive-comic","rootIndex":0,"headingText":"独家·只此一家别无分店","cards":{"containerSelector":"li.comic-item","linkSelector":"a.comic-link","titleSelector":"strong.comic-title","coverSelector":"img.cover-image","count":6,"samples":[{"title":"漫画3001","url":"https://m.ac.qq.com/comic/index/id/3001","cover":"https://m.ac.qq.com/covers/3001.jpg"},{"title":"漫画3002","url":"https://m.ac.qq.com/comic/index/id/3002","cover":"https://m.ac.qq.com/covers/3002.jpg"},{"title":"漫画3003","url":"https://m.ac.qq.com/comic/index/id/3003","cover":"https://m.ac.qq.com/covers/3003.jpg"},{"title":"漫画3004","url":"https://m.ac.qq.com/comic/index/id/3004","cover":"https://m.ac.qq.com/covers/3004.jpg"},{"title":"漫画3005","url":"https://m.ac.qq.com/comic/index/id/3005","cover":"https://m.ac.qq.com/covers/3005.jpg"},{"title":"漫画3006","url":"https://m.ac.qq.com/comic/index/id/3006","cover":"https://m.ac.qq.com/covers/3006.jpg"}]}}]) {
+            const root = this.findHomepageRoot(document, definition);
+            if (!root) throw "腾讯动漫真实首页分区已失效：" + definition.title;
+            const comics = this.parseCards(root, url);
+            if (comics.length === 0) throw "腾讯动漫真实首页分区为空：" + definition.title;
+            output[definition.title] = comics.slice(0, 24);
+          }
+          if (Object.keys(output).length !== 3) throw "腾讯动漫真实首页推荐分区不完整";
+          return output;
+        } finally {
+          document.dispose();
         }
-        return output;
       },
     },
   ];
