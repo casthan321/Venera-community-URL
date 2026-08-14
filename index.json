@@ -1,0 +1,18 @@
+[
+  {
+    "name": "腾讯动漫",
+    "fileName": "tencent_comics.js",
+    "key": "tencent_comics",
+    "version": "1.0.1",
+    "url": "https://raw.githubusercontent.com/casthan321/Venera-community-URL/main/tencent_comics.js",
+    "description": "支持搜索、分类、详情及网页公开可读章节；不绕过付费或 APP 专属限制。"
+  },
+  {
+    "name": "NoyManga",
+    "fileName": "noymanga.js",
+    "key": "noymanga",
+    "version": "1.0.1",
+    "url": "https://raw.githubusercontent.com/casthan321/Venera-community-URL/main/noymanga.js",
+    "description": "需在源设置中网页登录；Venera 自动接管 Cookie，无需手动获取 LocalStorage 令牌。"
+  }
+]

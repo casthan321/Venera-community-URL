@@ -1,0 +1,37 @@
+name: Validate Venera sources
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate repository index
+        run: node scripts/validate-index.mjs
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+
+      - name: Build official Venera CLI
+        run: |
+          git clone --depth 1 https://github.com/venera-app/venera_cli.git /tmp/venera_cli
+          cd /tmp/venera_cli
+          dart pub get
+          dart build cli --target bin/venera.dart --output /tmp/venera
+
+      - name: Validate every source with Venera CLI
+        run: |
+          node -e "for (const x of require('./index.json')) console.log(x.fileName)" > /tmp/venera-sources.txt
+          while IFS= read -r file; do
+            /tmp/venera/bundle/bin/venera source validate "$file"
+          done < /tmp/venera-sources.txt
