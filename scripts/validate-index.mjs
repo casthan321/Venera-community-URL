@@ -44,6 +44,29 @@ for (const entry of index) {
   if (metadata.version !== entry.version) fail(`${entry.fileName}: version does not match index.json`);
   if (metadata.minAppVersion !== "1.6.0") fail(`${entry.fileName}: minAppVersion must be 1.6.0`);
   if (metadata.url !== `${rawBase}/${entry.fileName}`) fail(`${entry.fileName}: update URL is not the canonical raw file`);
+  if (!/^\s*account\s*=\s*\{/m.test(code) || !/\bloginWithWebview\s*:\s*\{/m.test(code)) {
+    fail(`${entry.fileName}: missing WebView account integration`);
+  }
+  if (/\blogin\s*:\s*(?:async\s*)?\(/m.test(code)) {
+    fail(`${entry.fileName}: password login must not be embedded; use loginWithWebview`);
+  }
+  if (!/^\s*favorites\s*=\s*\{/m.test(code) || !/\baddOrDelFavorite\s*:/m.test(code)) {
+    fail(`${entry.fileName}: missing favorites integration`);
+  }
+  if (!/^\s*explore\s*=\s*\[/m.test(code) || !/type\s*:\s*["']multiPartPage["']/m.test(code)) {
+    fail(`${entry.fileName}: missing multi-part Discover page`);
+  }
+  if (!/viewMore\s*:\s*\{/m.test(code) || !/page\s*:\s*["']category["']/m.test(code)) {
+    fail(`${entry.fileName}: Discover sections need category viewMore targets`);
+  }
+  const forbiddenSecrets = [
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+    /["'](?:Authorization|Proxy-Authorization|Cookie)["']\s*:/i,
+    /\b(?:password|passwd|clientSecret|accessToken|refreshToken)\s*=\s*["'][^"']{4,}["']/i,
+  ];
+  if (forbiddenSecrets.some((pattern) => pattern.test(code))) {
+    fail(`${entry.fileName}: possible embedded credential or secret header`);
+  }
 }
 
 console.log(`Validated ${index.length} Venera sources.`);

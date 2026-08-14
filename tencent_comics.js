@@ -1,11 +1,14 @@
 class TencentComics extends ComicSource {
   name = "腾讯动漫";
   key = "tencent_comics";
-  version = "1.0.1";
+  version = "1.1.0";
   minAppVersion = "1.6.0";
   url = "https://raw.githubusercontent.com/casthan321/Venera-community-URL/main/tencent_comics.js";
 
   baseUrl = "https://m.ac.qq.com";
+  desktopBaseUrl = "https://ac.qq.com";
+  desktopUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36";
+  accountProbeComicId = "531490";
   searchUrlTemplate = "https://m.ac.qq.com/search/result?word={keyword}&page={page}&pageSize=10&style=items";
 
   requestHeaders(targetUrl, referer) {
@@ -15,7 +18,6 @@ class TencentComics extends ComicSource {
       "User-Agent": "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 Chrome/124 Mobile Safari/537.36 VeneraSourceForge/1.0",
       "Referer": referer || this.baseUrl,
     };
-
     return headers;
   }
 
@@ -62,6 +64,191 @@ class TencentComics extends ComicSource {
     const res = await Network.get(url, this.requestHeaders(url, referer));
     if (res.status < 200 || res.status >= 400) throw "Invalid status code: " + res.status;
     return new HtmlDocument(res.body);
+  }
+
+  apiHeaders(targetUrl, referer, isForm) {
+    const headers = this.requestHeaders(targetUrl, referer);
+    if (String(targetUrl || "").startsWith(this.desktopBaseUrl + "/")) {
+      headers["User-Agent"] = this.desktopUserAgent;
+    }
+    headers["Accept"] = "application/json,text/plain,*/*";
+    headers["X-Requested-With"] = "XMLHttpRequest";
+    headers["Cache-Control"] = "no-cache";
+    headers["Pragma"] = "no-cache";
+    if (isForm) headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8";
+    return headers;
+  }
+
+  parseTencentJson(response, context) {
+    if (response.status < 200 || response.status >= 400) {
+      throw context + "请求失败（HTTP " + response.status + "）";
+    }
+    let payload;
+    try {
+      payload = JSON.parse(String(response.body || ""));
+    } catch (error) {
+      throw context + "返回的不是有效 JSON";
+    }
+    if (!payload || typeof payload !== "object") throw context + "返回内容为空";
+    return payload;
+  }
+
+  isLoginStatus(status) {
+    const value = String(status == null ? "" : status);
+    return value === "-99" || value === "-97";
+  }
+
+  loginRequiredMessage() {
+    return "腾讯动漫账号未登录或登录状态已失效，请在源设置中重新点击“登录”";
+  }
+
+  apiFailure(context, payload) {
+    const message = String(payload?.msg || payload?.message || payload?.data || payload?.status || "未知错误");
+    return context + "失败：" + message.slice(0, 160);
+  }
+
+  normalizeComicId(value) {
+    const text = String(value == null ? "" : value).trim();
+    const match = text.match(/\/(?:comic\/index|Comic\/comicInfo)\/id\/(\d+)(?:[/?#]|$)/i) || text.match(/^(\d+)$/);
+    if (!match || !/^[1-9]\d{0,11}$/.test(match[1])) throw "腾讯动漫漫画 ID 无效";
+    return match[1];
+  }
+
+  mobileComicUrl(comicId) {
+    return this.baseUrl + "/comic/index/id/" + this.normalizeComicId(comicId);
+  }
+
+  isCollected(value) {
+    const normalized = String(value == null ? "" : value).toLowerCase();
+    return value === true || normalized === "1" || normalized === "true";
+  }
+
+  async getComicUserInfo(comicId, allowLoggedOut) {
+    const numericId = this.normalizeComicId(comicId);
+    const referer = this.mobileComicUrl(numericId);
+    const url = this.baseUrl + "/comic/getUserInfo?id=" + numericId;
+    const response = await Network.get(url, this.apiHeaders(url, referer, false));
+    const payload = this.parseTencentJson(response, "腾讯动漫账号探针");
+    if (String(payload.status) === "2" && payload.data && typeof payload.data === "object") {
+      return payload.data;
+    }
+    if (this.isLoginStatus(payload.status)) {
+      if (allowLoggedOut) return null;
+      throw this.loginRequiredMessage();
+    }
+    throw this.apiFailure("腾讯动漫账号探针", payload);
+  }
+
+  async probeTencentAccount() {
+    const data = await this.getComicUserInfo(this.accountProbeComicId, false);
+    const token = String(data.token || "").trim();
+    if (!token) throw "腾讯动漫账号探针未返回收藏校验 token，请重新登录";
+    return { data: data, token: token };
+  }
+
+  async showAccountStatus() {
+    try {
+      await this.probeTencentAccount();
+      UI.showMessage("腾讯动漫账号状态正常；可同步单一云收藏夹。网页没有可验证的签到接口，因此本源不提供签到。");
+      return "ok";
+    } catch (error) {
+      UI.showMessage("腾讯动漫账号检查失败：" + error);
+      throw error;
+    }
+  }
+
+  async readFavoriteState(comicId) {
+    try {
+      const data = await this.getComicUserInfo(comicId, true);
+      return data ? this.isCollected(data.is_coll) : false;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  async getUserCollection() {
+    const url = this.desktopBaseUrl + "/MyPersonalCenter/getUserCollection";
+    const response = await Network.get(url, this.apiHeaders(url, this.desktopBaseUrl + "/", false));
+    const payload = this.parseTencentJson(response, "腾讯动漫收藏列表");
+    if (this.isLoginStatus(payload.status)) throw this.loginRequiredMessage();
+    if (String(payload.status) !== "2") throw this.apiFailure("腾讯动漫收藏列表", payload);
+    const entries = Array.isArray(payload.data) ? payload.data : payload.data?.list;
+    if (!Array.isArray(entries)) throw "腾讯动漫收藏列表格式已变化";
+    return entries;
+  }
+
+  async loadFavoriteComics(page) {
+    const entries = await this.getUserCollection();
+    const comics = [];
+    const seen = new Set();
+    const pageSize = 12;
+    const currentPage = Math.max(1, Math.trunc(Number(page) || 1));
+    const pageEntries = entries.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+    for (const entry of pageEntries) {
+      let numericId;
+      try {
+        numericId = this.normalizeComicId(entry?.id ?? entry?.comicId);
+      } catch (error) {
+        continue;
+      }
+      let title = String(entry?.title || entry?.comicTitle || "").trim();
+      let cover = this.toAbsolute(entry?.coverUrl || entry?.cover || "", this.desktopBaseUrl + "/");
+      if (!title || !cover) {
+        const detailUrl = this.mobileComicUrl(numericId);
+        const document = await this.loadDocument(detailUrl, this.baseUrl);
+        try {
+          if (!title) title = this.readValue(document, "h1.top-title", "") || this.readValue(document, "h1", "");
+          if (!cover) cover = this.toAbsolute(this.readValue(document, "img.head-cover", "src"), detailUrl);
+        } finally {
+          document.dispose();
+        }
+      }
+      if (!title || !cover || seen.has(numericId)) continue;
+      seen.add(numericId);
+      comics.push(new Comic({ id: this.mobileComicUrl(numericId), title: title, cover: cover }));
+    }
+    const maxPage = Math.max(1, Math.ceil(entries.length / pageSize));
+    return {
+      comics: comics,
+      maxPage: maxPage,
+    };
+  }
+
+  formEncode(entries) {
+    return entries
+      .map((entry) => encodeURIComponent(String(entry[0])) + "=" + encodeURIComponent(String(entry[1])))
+      .join("&");
+  }
+
+  async setFavoriteState(comicId, isAdding) {
+    const numericId = this.normalizeComicId(comicId);
+    const probe = await this.probeTencentAccount();
+    const before = await this.getComicUserInfo(numericId, false);
+    if (this.isCollected(before.is_coll) === isAdding) return;
+
+    const url = isAdding
+      ? this.desktopBaseUrl + "/MyPersonalCenter/addUserCollection"
+      : this.desktopBaseUrl + "/Ajax/delCollection/comic_id/" + numericId;
+    const bodyEntries = isAdding
+      ? [["tokenKey", probe.token], ["comicId", numericId], ["seqNo", "0"]]
+      : [["tokenKey", probe.token]];
+    const response = await Network.post(
+      url,
+      this.apiHeaders(url, this.desktopBaseUrl + "/Comic/comicInfo/id/" + numericId, true),
+      this.formEncode(bodyEntries),
+    );
+    const payload = this.parseTencentJson(response, isAdding ? "添加腾讯动漫收藏" : "删除腾讯动漫收藏");
+    if (this.isLoginStatus(payload.status)) throw this.loginRequiredMessage();
+    const accepted = isAdding
+      ? String(payload.status) === "2" || String(payload.status) === "3"
+      : String(payload.status) === "1";
+    if (!accepted) throw this.apiFailure(isAdding ? "添加腾讯动漫收藏" : "删除腾讯动漫收藏", payload);
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const after = await this.getComicUserInfo(numericId, false);
+      if (this.isCollected(after.is_coll) === isAdding) return;
+    }
+    throw (isAdding ? "添加" : "删除") + "腾讯动漫收藏后，官网回读状态未确认";
   }
 
   parseCards(document, pageUrl) {
@@ -319,14 +506,8 @@ class TencentComics extends ComicSource {
     if (res.status < 200 || res.status >= 400) throw "Invalid chapter status: " + res.status;
     const payload = this.decodeChapterPayload(res.body);
     const chapter = payload.chapter || {};
-    if (
-      !chapter.canRead ||
-      Number(chapter.is_app_chapter) === 1 ||
-      Number(chapter.vip_state) === 2 ||
-      Number(chapter.vipStatus) === 2
-    ) {
-      throw "该章节为 APP 专属或付费受限内容";
-    }
+    if (Number(chapter.is_app_chapter) > 0) throw "该章节为腾讯动漫 APP 专属内容";
+    if (chapter.canRead !== true) throw "腾讯动漫服务器未授予该账号网页阅读权限";
     return payload;
   }
 
@@ -342,16 +523,23 @@ class TencentComics extends ComicSource {
   }
 
   settings = {
+    tencent_account_status: {
+      title: "账号状态",
+      type: "callback",
+      buttonText: "检查登录",
+      callback: async () => this.showAccountStatus(),
+    },
     source_self_test: {
       title: "源可用性自检",
       type: "callback",
-      buttonText: "运行搜索→分类→详情→公开章节→首图测试",
+      buttonText: "运行搜索→分类→发现→详情→章节→首图测试",
       callback: async () => this.runSelfTest(),
     },
   };
 
   async runSelfTest() {
     try {
+      await this.probeTencentAccount();
       const searchResult = await this.search.load("斗罗大陆", [], 1);
       if (!searchResult.comics?.length) throw "搜索没有返回漫画";
       const first = searchResult.comics[0];
@@ -367,6 +555,12 @@ class TencentComics extends ComicSource {
       }
       const categoryResult = await this.categoryComics.load("https://m.ac.qq.com/category/listAll/type/tm/rank/pgv?page={page}&pageSize=15&style=items", null, [], 1);
       if (!categoryResult.comics?.length) throw "分类没有返回漫画";
+      const exploreParts = await this.explore[0].load();
+      if (
+        !Array.isArray(exploreParts) ||
+        exploreParts.length < 3 ||
+        exploreParts.slice(0, 3).some((part) => !part?.comics?.length || !part.viewMore)
+      ) throw "发现页热门、更新或收藏分区为空";
       const info = await this.comic.loadInfo(first.id);
       if (!info.title || !info.cover || !info.chapters || info.chapters.size === 0) throw "详情或公开章节不完整";
       let epId = "";
@@ -395,7 +589,7 @@ class TencentComics extends ComicSource {
       if (imageResponse.status < 200 || imageResponse.status >= 400 || !this.isImageBytes(imageResponse.body)) {
         throw "正文首图不是有效图片";
       }
-      UI.showMessage("自检通过：搜索、分类、详情、公开章节与首图均可用");
+      UI.showMessage("自检通过：账号 Cookie、搜索、分类、发现、详情、服务器授权章节与首图均可用");
       return "ok";
     } catch (error) {
       UI.showMessage("自检失败：" + error);
@@ -403,6 +597,33 @@ class TencentComics extends ComicSource {
     }
   }
 
+  account = {
+    loginWithWebview: {
+      url: "https://m.ac.qq.com/Home/login?ret_url=https%3A%2F%2Fm.ac.qq.com%2F%3Fvenera_login_success%3D1",
+      checkStatus: (url, title) => String(url || "") === "https://m.ac.qq.com/?venera_login_success=1",
+      onLoginSuccess: () => UI.showMessage("网页登录已返回腾讯动漫；请用“账号状态”确认 Cookie 是否生效"),
+    },
+    logout: () => {
+      Network.deleteCookies("https://m.ac.qq.com");
+      Network.deleteCookies("https://ac.qq.com");
+      try {
+        if (typeof this.deleteData === "function") this.deleteData("_localStorage");
+      } catch (error) {
+      }
+    },
+    registerWebsite: null,
+  };
+
+  favorites = {
+    multiFolder: false,
+    addOrDelFavorite: async (comicId, folderId, isAdding) => {
+      await this.setFavoriteState(comicId, Boolean(isAdding));
+      return "ok";
+    },
+    loadComics: async (page, folder) => this.loadFavoriteComics(page),
+    singleFolderForSingleComic: false,
+    isOldToNewSort: false,
+  };
   search = {
     load: async (keyword, options, page) => {
       const url = this.searchUrlTemplate
@@ -461,6 +682,34 @@ class TencentComics extends ComicSource {
     optionList: [],
   };
 
+  explore = [
+    {
+      title: "腾讯动漫-tencent_comics-发现",
+      type: "multiPartPage",
+      load: async () => {
+        const categoryParts = Array.from(this.category.parts || []).slice(0, 3);
+        if (categoryParts.length < 3) throw "腾讯动漫发现页缺少热门、更新或收藏分类";
+        const output = [];
+        for (const part of categoryParts) {
+          const entry = part.categories?.[0];
+          const categoryUrl = entry?.target?.attributes?.category;
+          if (!categoryUrl) throw "腾讯动漫发现页分类入口无效";
+          const result = await this.categoryComics.load(categoryUrl, null, [], 1);
+          if (!result.comics?.length) throw "腾讯动漫发现页“" + part.name + "”为空";
+          output.push({
+            title: part.name,
+            comics: result.comics.slice(0, 12),
+            viewMore: {
+              page: "category",
+              attributes: { category: categoryUrl, param: null },
+            },
+          });
+        }
+        return output;
+      },
+    },
+  ];
+
   comic = {
     loadInfo: async (id) => {
       const document = await this.loadDocument(id, this.baseUrl);
@@ -477,12 +726,14 @@ class TencentComics extends ComicSource {
         }
         if (!title || !cover) throw "Comic detail selector no longer matches";
         if (chapters.size === 0) throw "No public web-readable chapters";
+        const isFavorite = await this.readFavoriteState(id);
         return new ComicDetails({
           title: title,
           cover: cover,
           description: description,
           tags: {},
           chapters: chapters,
+          isFavorite: isFavorite,
           url: id,
         });
       } finally {

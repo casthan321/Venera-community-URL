@@ -1,7 +1,7 @@
 class Noymanga extends ComicSource {
   name = "NoyManga";
   key = "noymanga";
-  version = "1.0.1";
+  version = "1.1.0";
   minAppVersion = "1.6.0";
   url = "https://raw.githubusercontent.com/casthan321/Venera-community-URL/main/noymanga.js";
 
@@ -9,6 +9,16 @@ class Noymanga extends ComicSource {
   apiBaseUrl = "https://noymanga.com";
   imageBaseUrl = "https://img.noymanga.com";
   userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36 VeneraSourceForge/1.0";
+  accountCacheKey = "noymanga_account_status_v1";
+  signInCacheKey = "noymanga_signin_checked_v1";
+  autoSignInRunning = false;
+  autoSignInAttemptDate = "";
+  suppressAutoSignIn = false;
+  signInTask = null;
+  signInTaskGeneration = -1;
+  signInGeneration = 0;
+  signInReadOnlyDepth = 0;
+  signInSuppressionBeforeReadOnly = false;
 
   apiHeaders(contentType) {
     const headers = {
@@ -38,7 +48,47 @@ class Noymanga extends ComicSource {
   }
 
   loginRequiredMessage() {
-    return "尚未登录 NoyManga：请先在源设置中点“网页登录”，登录完成后再运行 Level 3 自检。无需手动提取令牌。";
+    return "尚未登录 NoyManga：请先在源设置中点“登录”（会打开网页），完成后再运行 Level 3 自检。无需手动提取令牌。";
+  }
+
+  isSuccessStatus(value) {
+    if (value === 200) return true;
+    const status = String(value == null ? "" : value).trim().toLowerCase();
+    return status === "ok" || status === "200";
+  }
+
+  isLoginStatus(value, message) {
+    const status = String(value == null ? "" : value).trim().toLowerCase();
+    const detail = String(message == null ? "" : message);
+    return (
+      status === "unauthorized" ||
+      status === "nologin" ||
+      status === "no_login" ||
+      status === "login" ||
+      /login|登入|登录|尚未登录|未登录|權限|权限/i.test(detail)
+    );
+  }
+
+  readLocalData(key) {
+    try {
+      return typeof this.loadData === "function" ? this.loadData(key) : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  writeLocalData(key, value) {
+    try {
+      if (typeof this.saveData === "function") this.saveData(key, value);
+    } catch (error) {
+    }
+  }
+
+  clearLocalData(key) {
+    try {
+      if (typeof this.deleteData === "function") this.deleteData(key);
+    } catch (error) {
+    }
   }
 
   parseJsonResponse(response, context) {
@@ -53,16 +103,10 @@ class Noymanga extends ComicSource {
       throw context + "返回的不是有效 JSON";
     }
     if (!payload || typeof payload !== "object") throw context + "返回内容为空";
-    const status = payload.status == null ? "" : String(payload.status).toLowerCase();
-    if (status && status !== "ok") {
+    const status = payload.status;
+    if (status != null && String(status).trim() !== "" && !this.isSuccessStatus(status)) {
       const message = String(payload.msg || payload.message || status);
-      if (
-        status === "unauthorized" ||
-        status === "nologin" ||
-        status === "no_login" ||
-        status === "login" ||
-        /login|登入|登录|權限|权限/i.test(message)
-      ) throw this.loginRequiredMessage();
+      if (this.isLoginStatus(status, message)) throw this.loginRequiredMessage();
       throw context + "失败：" + message;
     }
     return payload;
@@ -83,25 +127,37 @@ class Noymanga extends ComicSource {
   }
 
   async assertLoggedIn() {
-    const response = await Network.post(
-      this.apiBaseUrl + "/api/v3/userinfo",
-      this.apiHeaders("application/x-www-form-urlencoded"),
-      "",
-    );
-    if (response.status === 401 || response.status === 403) throw this.loginRequiredMessage();
-    if (response.status < 200 || response.status >= 400) {
-      throw "账号探针请求失败（HTTP " + response.status + "）";
-    }
-    let payload;
-    try {
-      payload = JSON.parse(String(response.body || ""));
-    } catch (error) {
-      throw "账号探针返回的不是有效 JSON";
-    }
-    if (payload.status !== "ok" || !payload.userinfo || typeof payload.userinfo !== "object") {
+    const payload = await this.postForm("/api/v3/userinfo", [], "账号状态");
+    if (!this.isSuccessStatus(payload.status) || !payload.userinfo || typeof payload.userinfo !== "object") {
       throw this.loginRequiredMessage();
     }
-    return true;
+    const user = payload.userinfo;
+    this.writeLocalData(this.accountCacheKey, {
+      uid: user.Uid == null ? user.uid : user.Uid,
+      username: String(user.Username || user.username || "").trim(),
+    });
+    return user;
+  }
+
+  accountLabel(user) {
+    const name = String(user.Username || user.username || user.Name || user.name || "").trim();
+    const uid = user.Uid == null ? user.uid : user.Uid;
+    const integral = user.Integral == null ? user.integral : user.Integral;
+    let label = name || "NoyManga 用户";
+    if (uid != null && String(uid).trim()) label += "（UID " + uid + "）";
+    if (integral != null && String(integral).trim()) label += "，积分 " + integral;
+    return label;
+  }
+
+  async showAccountStatus() {
+    try {
+      const user = await this.assertLoggedIn();
+      UI.showMessage("账号状态正常：" + this.accountLabel(user) + "。Cookie 已由 Venera 自动管理。");
+      return "ok";
+    } catch (error) {
+      UI.showMessage("账号状态检查失败：" + error);
+      throw error;
+    }
   }
 
   normalizePositiveId(value, label, allowZero) {
@@ -164,7 +220,9 @@ class Noymanga extends ComicSource {
   }
 
   parseCategoryComics(payload) {
-    const rows = Array.isArray(payload.info) ? payload.info : [];
+    const rows = Array.isArray(payload.info)
+      ? payload.info
+      : (Array.isArray(payload.data) ? payload.data : []);
     const comics = [];
     const seen = new Set();
     for (const item of rows) {
@@ -245,6 +303,179 @@ class Noymanga extends ComicSource {
     return this.imageBaseUrl + "/" + bid + "/m1.webp";
   }
 
+  normalizeFavoriteState(value) {
+    if (value === true || value === 1) return true;
+    if (value === false || value === 0 || value == null) return false;
+    const text = String(value).trim().toLowerCase();
+    return text === "1" || text === "true" || text === "yes" || text === "favorite" || text === "favorited";
+  }
+
+  async loadBookPayload(id, context) {
+    const bid = this.normalizePositiveId(id, "漫画 ID", false);
+    const payload = await this.getJson("/api/v4/book/" + bid, context || "漫画详情");
+    if (!payload.book || !payload.book.info || typeof payload.book.info !== "object") {
+      throw (context || "漫画详情") + "字段缺失";
+    }
+    return { bid: bid, payload: payload, info: payload.book.info };
+  }
+
+  localDateKey() {
+    const now = new Date();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return String(now.getFullYear()) + "-" + month + "-" + day;
+  }
+
+  isSignedToday(record) {
+    if (!record || typeof record !== "object") return false;
+    const today = record.today;
+    if (today && typeof today === "object") {
+      return this.normalizeFavoriteState(
+        today.signed == null
+          ? (today.status == null ? (today.IsSign == null ? today.isSign : today.IsSign) : today.status)
+          : today.signed,
+      );
+    }
+    return this.normalizeFavoriteState(today);
+  }
+
+  async readSignInRecord() {
+    const record = await this.postForm("/api/v4/signin/record", [], "签到记录");
+    if (!Object.prototype.hasOwnProperty.call(record, "today")) throw "签到记录缺少 today 字段";
+    return record;
+  }
+
+  signInSummary(record, alreadySigned) {
+    const continuous = record && record.continuous != null ? Number(record.continuous) : 0;
+    if (alreadySigned) {
+      return continuous > 0 ? "今日已签到，当前连续 " + continuous + " 天。" : "今日已经签到。";
+    }
+    return continuous > 0 ? "签到成功，当前连续 " + continuous + " 天。" : "签到成功。";
+  }
+
+  signInCancelledMessage() {
+    return "签到任务已取消：登录状态已变化或只读自检正在运行";
+  }
+
+  signInWritesBlocked() {
+    return this.suppressAutoSignIn || this.signInReadOnlyDepth > 0;
+  }
+
+  assertSignInTaskCanContinue(generation) {
+    if (generation !== this.signInGeneration || this.signInWritesBlocked()) {
+      throw this.signInCancelledMessage();
+    }
+  }
+
+  async runDailySignInTask(generation) {
+    this.assertSignInTaskCanContinue(generation);
+    const before = await this.readSignInRecord();
+    this.assertSignInTaskCanContinue(generation);
+    if (this.isSignedToday(before)) {
+      this.writeLocalData(this.signInCacheKey, this.localDateKey());
+      return { alreadySigned: true, record: before };
+    }
+
+    await Promise.resolve();
+    this.assertSignInTaskCanContinue(generation);
+    await this.postForm("/api/v4/signin/sign", [], "每日签到");
+    this.assertSignInTaskCanContinue(generation);
+    const after = await this.readSignInRecord();
+    this.assertSignInTaskCanContinue(generation);
+    if (!this.isSignedToday(after)) throw "签到请求已提交，但服务器尚未确认今日签到状态，请稍后重试";
+    this.writeLocalData(this.signInCacheKey, this.localDateKey());
+    return { alreadySigned: false, record: after };
+  }
+
+  finishSignInTask(task) {
+    if (this.signInTask !== task) return;
+    this.signInTask = null;
+    this.signInTaskGeneration = -1;
+    this.autoSignInRunning = false;
+  }
+
+  ensureDailySignIn() {
+    const generation = this.signInGeneration;
+    this.assertSignInTaskCanContinue(generation);
+    if (this.signInTask && this.signInTaskGeneration === generation) return this.signInTask;
+
+    const task = this.runDailySignInTask(generation);
+    this.signInTask = task;
+    this.signInTaskGeneration = generation;
+    this.autoSignInRunning = true;
+    task.then(
+      () => this.finishSignInTask(task),
+      () => this.finishSignInTask(task),
+    );
+    return task;
+  }
+
+  async manualSignIn() {
+    try {
+      const result = await this.ensureDailySignIn();
+      UI.showMessage(this.signInSummary(result.record, result.alreadySigned));
+      return "ok";
+    } catch (error) {
+      UI.showMessage("签到失败：" + error);
+      throw error;
+    }
+  }
+
+  autoSignInEnabled() {
+    try {
+      if (typeof this.loadSetting !== "function") return false;
+      const value = this.loadSetting("auto_signin");
+      return value === true || value === 1 || String(value).toLowerCase() === "true";
+    } catch (error) {
+      return false;
+    }
+  }
+
+  maybeAutoSignIn() {
+    if (this.signInWritesBlocked() || !this.autoSignInEnabled()) return;
+    const today = this.localDateKey();
+    if (this.autoSignInAttemptDate === today || this.readLocalData(this.signInCacheKey) === today) return;
+    this.autoSignInAttemptDate = today;
+    try {
+      const task = this.ensureDailySignIn();
+      task.then(() => {}, () => {});
+    } catch (error) {
+    }
+  }
+
+  async beginSignInReadOnlyPhase() {
+    const pending = this.signInTask;
+    if (this.signInReadOnlyDepth === 0) {
+      this.signInSuppressionBeforeReadOnly = this.suppressAutoSignIn;
+    }
+    this.signInReadOnlyDepth += 1;
+    this.suppressAutoSignIn = true;
+    this.signInGeneration += 1;
+    this.autoSignInAttemptDate = "";
+    if (pending) {
+      try {
+        await pending;
+      } catch (error) {
+      }
+    }
+  }
+
+  endSignInReadOnlyPhase() {
+    this.signInReadOnlyDepth = Math.max(0, this.signInReadOnlyDepth - 1);
+    if (this.signInReadOnlyDepth === 0) {
+      this.suppressAutoSignIn = this.signInSuppressionBeforeReadOnly;
+      this.signInSuppressionBeforeReadOnly = false;
+      this.autoSignInAttemptDate = "";
+    }
+  }
+
+  clearAccountState() {
+    this.signInGeneration += 1;
+    this.autoSignInAttemptDate = "";
+    this.clearLocalData(this.accountCacheKey);
+    this.clearLocalData(this.signInCacheKey);
+  }
+
   isImageBytes(value) {
     if (!value || value.byteLength < 3) return false;
     const bytes = new Uint8Array(value);
@@ -269,22 +500,49 @@ class Noymanga extends ComicSource {
   }
 
   settings = {
+    account_status: {
+      title: "NoyManga 账号状态",
+      type: "callback",
+      buttonText: "检查当前登录账号",
+      callback: async () => this.showAccountStatus(),
+    },
+    manual_signin: {
+      title: "每日签到",
+      type: "callback",
+      buttonText: "立即签到（已签到不会重复操作）",
+      callback: async () => this.manualSignIn(),
+    },
+    auto_signin: {
+      title: "阅读时自动尝试每日签到",
+      type: "switch",
+      default: false,
+    },
     source_self_test: {
       title: "源可用性 Level 3 自检",
       type: "callback",
-      buttonText: "运行账号→搜索→分类→详情→章节→图片全链路测试",
+      buttonText: "运行账号→签到记录（只读）→搜索→分类→详情→章节→图片测试",
       callback: async () => this.runSelfTest(),
     },
   };
 
   async runSelfTest() {
+    await this.beginSignInReadOnlyPhase();
     try {
       await this.assertLoggedIn();
+      await this.readSignInRecord();
       const searchResult = await this.search.load("魔法少女", [], 1);
       if (!searchResult.comics || searchResult.comics.length === 0) throw "搜索没有返回漫画";
 
       const categoryResult = await this.categoryComics.load("new|", null, [], 1);
       if (!categoryResult.comics || categoryResult.comics.length === 0) throw "分类没有返回漫画";
+
+      const exploreResult = await this.explore[0].load();
+      if (!Array.isArray(exploreResult) || exploreResult.length < 3) throw "发现页分区少于 3 个";
+      for (const part of exploreResult.slice(0, 3)) {
+        if (!part || !Array.isArray(part.comics) || part.comics.length === 0) {
+          throw "发现页分区“" + String(part && part.title || "未知") + "”没有返回漫画";
+        }
+      }
 
       let selected = null;
       let info = null;
@@ -322,11 +580,13 @@ class Noymanga extends ComicSource {
 
       await this.assertImage(this.comic.onThumbnailLoad(info.cover), "详情封面");
       await this.assertImage(this.comic.onImageLoad(pages.images[0], selected.id, epId), "正文首图");
-      UI.showMessage("Level 3 自检通过：Cookie、搜索、分类、详情、章节、封面与正文首图均可用。");
+      UI.showMessage("Level 3 自检通过：Cookie、签到记录（只读）、搜索、发现、分类、详情、章节、封面与正文首图均可用；自检不会执行签到。");
       return "ok";
     } catch (error) {
       UI.showMessage("Level 3 自检失败：" + error);
       throw error;
+    } finally {
+      this.endSignInReadOnlyPhase();
     }
   }
 
@@ -334,21 +594,31 @@ class Noymanga extends ComicSource {
     loginWithWebview: {
       url: "https://noymanga.com/login",
       checkStatus: (url, title) => {
-        const value = String(url || "").split("#")[0].split("?")[0].replace(/\/$/, "");
-        const sameOrigin = value === this.baseUrl || value.startsWith(this.baseUrl + "/");
-        const path = sameOrigin ? value.slice(this.baseUrl.length) : "";
-        return sameOrigin && path !== "/login" && !path.startsWith("/login/");
+        if (!/Noy(?:Acg|Manga)/i.test(String(title || "").trim())) return false;
+        const value = String(url || "").trim().split("#")[0].split("?")[0].replace(/\/+$/, "");
+        const match = value.match(/^https:\/\/noymanga\.com(?::443)?(\/.*)?$/i);
+        const path = match ? (match[1] || "/") : "";
+        return path === "/" || path === "/user" || path === "/favorite";
       },
       onLoginSuccess: () => {
-        UI.showMessage("登录完成，Cookie 已自动接管；请回到源设置运行 Level 3 自检。");
+        this.signInGeneration += 1;
+        this.clearLocalData(this.accountCacheKey);
+        this.clearLocalData(this.signInCacheKey);
+        this.autoSignInAttemptDate = "";
+        UI.showMessage("登录完成，Cookie 已自动接管；无需提取任何令牌。可回到源设置检查账号或运行 Level 3 自检。");
       },
     },
-    logout: () => Network.deleteCookies(this.baseUrl),
+    logout: () => {
+      this.clearAccountState();
+      this.clearLocalData("_localStorage");
+      Network.deleteCookies(this.baseUrl);
+    },
     registerWebsite: null,
   };
 
   search = {
     load: async (keyword, options, page) => {
+      this.maybeAutoSignIn();
       const pageNumber = Math.max(1, Number(page) || 1);
       const payload = await this.postForm("/api/v4/search/fetch", [
         ["value", String(keyword || "").trim()],
@@ -365,6 +635,34 @@ class Noymanga extends ComicSource {
     },
     optionList: [],
   };
+
+  explore = [
+    {
+      title: "NoyManga-noymanga-发现",
+      type: "multiPartPage",
+      load: async () => {
+        this.maybeAutoSignIn();
+        const definitions = [
+          { title: "最新漫画", category: "new|" },
+          { title: "最多收藏", category: "favorites|" },
+          { title: "最高评分", category: "rating|" },
+        ];
+        const parts = [];
+        for (const definition of definitions) {
+          const result = await this.categoryComics.load(definition.category, null, [], 1);
+          parts.push({
+            title: definition.title,
+            comics: Array.from(result.comics || []).slice(0, 12),
+            viewMore: {
+              page: "category",
+              attributes: { category: definition.category, param: null },
+            },
+          });
+        }
+        return parts;
+      },
+    },
+  ];
 
   category = {
     title: "NoyManga-noymanga-分类",
@@ -393,6 +691,7 @@ class Noymanga extends ComicSource {
 
   categoryComics = {
     load: async (category, param, options, page) => {
+      this.maybeAutoSignIn();
       const pageNumber = Math.max(1, Number(page) || 1);
       const config = this.decodeCategory(category);
       const payload = await this.postForm("/api/b1/booklist", [
@@ -408,12 +707,47 @@ class Noymanga extends ComicSource {
     optionList: [],
   };
 
+  favorites = {
+    multiFolder: false,
+
+    addOrDelFavorite: async (comicId, folderId, isAdding) => {
+      this.maybeAutoSignIn();
+      const bid = this.normalizePositiveId(comicId, "漫画 ID", false);
+      const desired = isAdding === true;
+      const before = await this.loadBookPayload(bid, "收藏状态检查");
+      if (this.normalizeFavoriteState(before.info.F) === desired) return "ok";
+
+      await this.postForm("/api/v4/favorites/toggle", [["bid", bid]], desired ? "添加收藏" : "取消收藏");
+      const after = await this.loadBookPayload(bid, "收藏状态复验");
+      if (this.normalizeFavoriteState(after.info.F) !== desired) {
+        throw (desired ? "添加收藏" : "取消收藏") + "后状态复验未通过，请刷新详情后重试";
+      }
+      return "ok";
+    },
+
+    loadComics: async (page, folder) => {
+      this.maybeAutoSignIn();
+      const pageNumber = Math.max(1, Number(page) || 1);
+      const payload = await this.postForm("/api/v4/favorites/get", [
+        ["page", pageNumber],
+      ], "收藏列表");
+      return {
+        comics: this.parseCategoryComics(payload),
+        maxPage: this.maxPage(payload.count, pageNumber),
+      };
+    },
+
+    singleFolderForSingleComic: false,
+    isOldToNewSort: false,
+  };
+
   comic = {
     loadInfo: async (id) => {
-      const requestedBid = this.normalizePositiveId(id, "漫画 ID", false);
-      const payload = await this.getJson("/api/v4/book/" + requestedBid, "漫画详情");
-      if (!payload.book || !payload.book.info) throw "漫画详情字段缺失";
-      const info = payload.book.info;
+      this.maybeAutoSignIn();
+      const book = await this.loadBookPayload(id, "漫画详情");
+      const requestedBid = book.bid;
+      const payload = book.payload;
+      const info = book.info;
       const bid = this.normalizePositiveId(info.Bid == null ? requestedBid : info.Bid, "漫画 ID", false);
       const title = String(info.Bookname || "").trim();
       if (!title) throw "漫画标题字段缺失";
@@ -449,10 +783,12 @@ class Noymanga extends ComicSource {
         tags: tags,
         chapters: chapters,
         url: this.baseUrl + "/manga/" + bid,
+        isFavorite: this.normalizeFavoriteState(info.F),
       });
     },
 
     loadEp: async (comicId, epId) => {
+      this.maybeAutoSignIn();
       const bid = this.normalizePositiveId(comicId, "漫画 ID", false);
       const cid = this.normalizePositiveId(epId, "章节 ID", true);
       const chapter = await this.getJson("/api/v4/book/detail/" + bid + "/" + cid, "章节正文");
