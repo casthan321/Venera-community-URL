@@ -12,12 +12,22 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Validate repository index
-        run: node scripts/validate-index.mjs
+      - name: Validate repository policy and declared capabilities
+        run: |
+          node scripts/validate-index.mjs
+          node scripts/validate-index-fixtures.mjs
+
+      - name: Parse every JavaScript source
+        run: |
+          node -e "for (const x of require('./index.json')) console.log(x.fileName)" > /tmp/venera-sources.txt
+          while IFS= read -r file; do
+            node --check "$file"
+          done < /tmp/venera-sources.txt
 
       - name: Set up Dart
         uses: dart-lang/setup-dart@v1
@@ -31,7 +41,6 @@ jobs:
 
       - name: Validate every source with Venera CLI
         run: |
-          node -e "for (const x of require('./index.json')) console.log(x.fileName)" > /tmp/venera-sources.txt
           while IFS= read -r file; do
             /tmp/venera/bundle/bin/venera source validate "$file"
           done < /tmp/venera-sources.txt
