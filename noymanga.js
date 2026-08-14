@@ -1,7 +1,7 @@
 class Noymanga extends ComicSource {
   name = "NoyManga";
   key = "noymanga";
-  version = "1.1.1";
+  version = "1.1.2";
   minAppVersion = "1.6.0";
   url = "https://raw.githubusercontent.com/casthan321/Venera-community-URL/main/noymanga.js";
 
@@ -48,7 +48,7 @@ class Noymanga extends ComicSource {
   }
 
   loginRequiredMessage() {
-    return "尚未登录 NoyManga：请先在源设置中点“登录”（会打开网页），完成后再运行 Level 3 自检。无需手动提取令牌。";
+    return "尚未登录 NoyManga：请先在源设置中点“登录”（会打开网页），完成后再点“连接测试”里的“测试”。无需手动提取令牌。";
   }
 
   isSuccessStatus(value) {
@@ -580,10 +580,10 @@ class Noymanga extends ComicSource {
 
       await this.assertImage(this.comic.onThumbnailLoad(info.cover), "详情封面");
       await this.assertImage(this.comic.onImageLoad(pages.images[0], selected.id, epId), "正文首图");
-      UI.showMessage("Level 3 自检通过：Cookie、签到记录（只读）、搜索、发现、分类、详情、章节、封面与正文首图均可用；自检不会执行签到。");
+      UI.showMessage("连接测试通过：Cookie、签到记录（只读）、搜索、首页、分类、详情、章节、封面与正文首图均可用；测试不会执行签到。");
       return "ok";
     } catch (error) {
-      UI.showMessage("Level 3 自检失败：" + error);
+      UI.showMessage("连接测试失败：" + error);
       throw error;
     } finally {
       this.endSignInReadOnlyPhase();
@@ -605,7 +605,7 @@ class Noymanga extends ComicSource {
         this.clearLocalData(this.accountCacheKey);
         this.clearLocalData(this.signInCacheKey);
         this.autoSignInAttemptDate = "";
-        UI.showMessage("登录完成，Cookie 已自动接管；无需提取任何令牌。可回到源设置检查账号或运行 Level 3 自检。");
+        UI.showMessage("登录完成，Cookie 已自动接管；无需提取任何令牌。可回到源设置检查账号或运行连接测试。");
       },
     },
     logout: () => {

@@ -1,7 +1,7 @@
 class TencentComics extends ComicSource {
   name = "腾讯动漫";
   key = "tencent_comics";
-  version = "1.1.1";
+  version = "1.1.2";
   minAppVersion = "1.6.0";
   url = "https://raw.githubusercontent.com/casthan321/Venera-community-URL/main/tencent_comics.js";
 
@@ -669,7 +669,7 @@ class TencentComics extends ComicSource {
     loginWithWebview: {
       url: "https://m.ac.qq.com/Home/login?ret_url=https%3A%2F%2Fm.ac.qq.com%2F%3Fvenera_login_success%3D1",
       checkStatus: (url, title) => String(url || "") === "https://m.ac.qq.com/?venera_login_success=1",
-      onLoginSuccess: () => UI.showMessage("网页登录已返回腾讯动漫；请用“账号状态”确认 Cookie 是否生效"),
+      onLoginSuccess: () => UI.showMessage("网页登录已返回腾讯动漫；请在“账号”一项点“检查”确认 Cookie 是否生效"),
     },
     logout: () => {
       Network.deleteCookies("https://m.ac.qq.com");

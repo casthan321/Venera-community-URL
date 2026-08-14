@@ -3,7 +3,7 @@
     "name": "腾讯动漫",
     "fileName": "tencent_comics.js",
     "key": "tencent_comics",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "url": "https://raw.githubusercontent.com/casthan321/Venera-community-URL/main/tencent_comics.js",
     "description": "支持首页分区、搜索、分类、QQ 网页登录、账号状态与云收藏；分类显示真实名称并预先求出页数，只读取服务器已授权的网页章节。"
   },
@@ -11,7 +11,7 @@
     "name": "NoyManga",
     "fileName": "noymanga.js",
     "key": "noymanga",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "url": "https://raw.githubusercontent.com/casthan321/Venera-community-URL/main/noymanga.js",
     "description": "支持首页分区、搜索、可读分类、Cookie 网页登录、账号状态、云收藏及手动/可选自动签到；无需获取 LocalStorage 令牌。"
   }
